@@ -43,6 +43,9 @@ public class DB2ClientModule
             throws SQLException
     {
         Properties connectionProperties = new Properties();
+        // https://www-01.ibm.com/support/knowledgecenter/ssw_ibm_i_72/rzaha/conprop.htm
+        // block size (a.k.a fetch size), default 32
+        connectionProperties.setProperty("block size", "512");
         return DriverConnectionFactory.builder(new DB2Driver(), config.getConnectionUrl(), credentialProvider)
 //                DriverConnectionFactory.builder(DriverManager.getDriver(config.getConnectionUrl()), config.getConnectionUrl(), credentialProvider)
                 .setConnectionProperties(connectionProperties)
