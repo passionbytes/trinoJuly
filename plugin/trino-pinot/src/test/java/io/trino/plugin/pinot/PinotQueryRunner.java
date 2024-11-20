@@ -32,6 +32,7 @@ import java.util.Optional;
 import static com.google.inject.multibindings.OptionalBinder.newOptionalBinder;
 import static io.trino.plugin.base.util.Closables.closeAllSuppress;
 import static io.trino.plugin.pinot.PinotTpchTables.createTpchTables;
+import static io.trino.plugin.pinot.TestingPinotCluster.PINOT_LATEST_IMAGE_NAME;
 import static io.trino.testing.TestingSession.testSessionBuilder;
 import static io.trino.tpch.TpchTable.CUSTOMER;
 import static io.trino.tpch.TpchTable.NATION;
@@ -110,6 +111,7 @@ public final class PinotQueryRunner
                         .toInstance(new TestingPinotHostMapper(pinot.getBrokerHostAndPort(), pinot.getServerHostAndPort(), pinot.getServerGrpcHostAndPort())))));
                 Map<String, String> extraPinotProperties = new HashMap<>(pinotProperties.buildOrThrow());
                 extraPinotProperties.put("pinot.controller-urls", pinot.getControllerConnectString());
+                extraPinotProperties.put("pinot.metadata-expiry", "5s");
                 queryRunner.createCatalog(PINOT_CATALOG, "pinot", extraPinotProperties);
 
                 queryRunner.installPlugin(new TpchPlugin());
@@ -129,7 +131,7 @@ public final class PinotQueryRunner
     {
         TestingKafka kafka = TestingKafka.createWithSchemaRegistry();
         kafka.start();
-        TestingPinotCluster pinot = new TestingPinotCluster(kafka.getNetwork(), false);
+        TestingPinotCluster pinot = new TestingPinotCluster(PINOT_LATEST_IMAGE_NAME, kafka.getNetwork(), false);
         pinot.start();
         QueryRunner queryRunner = builder()
                 .setKafka(kafka)

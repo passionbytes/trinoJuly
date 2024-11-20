@@ -185,6 +185,12 @@ public final class StatisticsAwareJdbcClient
     }
 
     @Override
+    public Optional<JdbcExpression> convertProjection(ConnectorSession session, JdbcTableHandle handle, ConnectorExpression expression, Map<String, ColumnHandle> assignments)
+    {
+        return stats.getConvertProjection().wrap(() -> delegate().convertProjection(session, handle, expression, assignments));
+    }
+
+    @Override
     public ConnectorSplitSource getSplits(ConnectorSession session, JdbcTableHandle layoutHandle)
     {
         return stats.getGetSplits().wrap(() -> delegate().getSplits(session, layoutHandle));
@@ -381,6 +387,13 @@ public final class StatisticsAwareJdbcClient
     public String buildInsertSql(JdbcOutputTableHandle handle, List<WriteFunction> columnWriters)
     {
         return stats.getBuildInsertSql().wrap(() -> delegate().buildInsertSql(handle, columnWriters));
+    }
+
+    @Override
+    public Connection getConnection(ConnectorSession session)
+            throws SQLException
+    {
+        return stats.getGetConnectionWithHandle().wrap(() -> delegate().getConnection(session));
     }
 
     @Override

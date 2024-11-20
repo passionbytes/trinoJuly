@@ -17,9 +17,10 @@ import io.trino.spi.block.Block;
 import io.trino.spi.type.Type;
 import org.junit.jupiter.api.Test;
 
+import static io.trino.plugin.hive.HiveStorageFormat.PARQUET;
 import static io.trino.plugin.hive.HiveTimestampPrecision.DEFAULT_PRECISION;
-import static io.trino.plugin.hive.HiveType.toHiveType;
 import static io.trino.plugin.hive.coercions.CoercionUtils.createCoercer;
+import static io.trino.plugin.hive.util.HiveTypeTranslator.toHiveType;
 import static io.trino.spi.predicate.Utils.blockToNativeValue;
 import static io.trino.spi.predicate.Utils.nativeValueToBlock;
 import static io.trino.spi.type.BigintType.BIGINT;
@@ -95,7 +96,7 @@ public class TestIntegerNumberToDoubleCoercer
 
     private static Block createIntegerToDoubleCoercer(Type fromType, Object valueToBeCoerced)
     {
-        return createCoercer(TESTING_TYPE_MANAGER, toHiveType(fromType), toHiveType(DOUBLE), new CoercionUtils.CoercionContext(DEFAULT_PRECISION, false)).orElseThrow()
+        return createCoercer(TESTING_TYPE_MANAGER, toHiveType(fromType), toHiveType(DOUBLE), new CoercionUtils.CoercionContext(DEFAULT_PRECISION, PARQUET)).orElseThrow()
                 .apply(nativeValueToBlock(fromType, valueToBeCoerced));
     }
 }

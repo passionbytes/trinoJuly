@@ -25,15 +25,16 @@
         <artifact id="${project.groupId}:trino-server-main:${project.version}" />
     </artifactSet>
 
-    <!-- Plugins -->
-    <artifactSet to="plugin/accumulo">
-        <artifact id="${project.groupId}:trino-accumulo:zip:${project.version}">
+    <!-- Configuration Plugins -->
+    <artifactSet to="secrets-plugin/keystore-secrets-plugin">
+        <artifact id="io.airlift:secrets-keystore-plugin:zip:${dep.packaging.version}">
             <unpack />
         </artifact>
     </artifactSet>
 
-    <artifactSet to="plugin/atop">
-        <artifact id="${project.groupId}:trino-atop:zip:${project.version}">
+    <!-- Plugins -->
+    <artifactSet to="plugin/accumulo">
+        <artifact id="${project.groupId}:trino-accumulo:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
@@ -85,6 +86,12 @@
 
     <artifactSet to="plugin/example-http">
         <artifact id="${project.groupId}:trino-example-http:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/exasol">
+        <artifact id="${project.groupId}:trino-exasol:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
@@ -170,6 +177,12 @@
         </artifact>
     </artifactSet>
 
+    <artifactSet to="plugin/kafka-event-listener">
+        <artifact id="${project.groupId}:trino-kafka-event-listener:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
     <artifactSet to="plugin/kinesis">
         <artifact id="${project.groupId}:trino-kinesis:zip:${project.version}">
             <unpack />
@@ -182,8 +195,8 @@
         </artifact>
     </artifactSet>
 
-    <artifactSet to="plugin/local-file">
-        <artifact id="${project.groupId}:trino-local-file:zip:${project.version}">
+    <artifactSet to="plugin/lancedb">
+        <artifact id="${project.groupId}:trino-lancedb:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
@@ -272,12 +285,6 @@
         </artifact>
     </artifactSet>
 
-    <artifactSet to="plugin/raptor-legacy">
-        <artifact id="${project.groupId}:trino-raptor-legacy:zip:${project.version}">
-            <unpack />
-        </artifact>
-    </artifactSet>
-
     <artifactSet to="plugin/redis">
         <artifact id="${project.groupId}:trino-redis:zip:${project.version}">
             <unpack />
@@ -310,6 +317,12 @@
 
     <artifactSet to="plugin/snowflake">
         <artifact id="${project.groupId}:trino-snowflake:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/spooling-filesystem">
+        <artifact id="${project.groupId}:trino-spooling-filesystem:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
@@ -350,14 +363,8 @@
         </artifact>
     </artifactSet>
 
-    <artifactSet to="plugin/db2">
-        <artifact id="${project.groupId}:trino-db2:zip:${project.version}">
-            <unpack />
-        </artifact>
-    </artifactSet>
-
-    <artifactSet to="plugin/duckdb">
-        <artifact id="${project.groupId}:trino-duck-db:zip:${project.version}">
+    <artifactSet to="plugin/arrow">
+        <artifact id="${project.groupId}:trino-arrow:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>

@@ -55,9 +55,6 @@ The following Phoenix-specific configuration properties are available:
 ```{include} jdbc-domain-compaction-threshold.fragment
 ```
 
-```{include} jdbc-procedures.fragment
-```
-
 ```{include} jdbc-case-insensitive-matching.fragment
 ```
 
@@ -272,6 +269,7 @@ Phoenix. In addition to the {ref}`globally available
 statements, the connector supports the following features:
 
 - {doc}`/sql/insert`
+- {doc}`/sql/update`
 - {doc}`/sql/delete`
 - {doc}`/sql/merge`
 - {doc}`/sql/create-table`
@@ -281,4 +279,9 @@ statements, the connector supports the following features:
 - {doc}`/sql/drop-schema`
 
 ```{include} sql-delete-limitation.fragment
+```
+
+### Procedures
+
+```{include} procedures-execute.fragment
 ```

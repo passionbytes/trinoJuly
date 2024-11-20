@@ -25,6 +25,7 @@ import io.trino.spi.block.Block;
 import io.trino.spi.block.IntArrayBlock;
 import io.trino.spi.block.LongArrayBlock;
 import io.trino.spi.block.ShortArrayBlock;
+import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.function.OperatorType;
 import io.trino.spi.type.StandardTypes;
 import io.trino.spi.type.Type;
@@ -42,6 +43,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
@@ -160,9 +162,11 @@ public class BenchmarkColumnarFilter
         compiledProcessor = expressionCompiler.compilePageProcessor(
                         columnarEvaluationEnabled,
                         Optional.of(filterProvider.getExpression(type)),
+                        Optional.empty(),
                         ImmutableList.of(field(0, type)),
-                        Optional.empty())
-                .get();
+                        Optional.empty(),
+                        OptionalInt.empty())
+                .apply(DynamicFilter.EMPTY);
     }
 
     @Benchmark

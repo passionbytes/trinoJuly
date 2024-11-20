@@ -19,6 +19,7 @@ import io.trino.filesystem.Location;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.filesystem.TrinoInputFile;
+import io.trino.metastore.HiveMetastore;
 import io.trino.orc.OrcDataSource;
 import io.trino.orc.OrcReader;
 import io.trino.orc.OrcReaderOptions;
@@ -32,7 +33,6 @@ import io.trino.parquet.metadata.ParquetMetadata;
 import io.trino.parquet.reader.MetadataReader;
 import io.trino.plugin.hive.FileFormatDataSourceStats;
 import io.trino.plugin.hive.TrinoViewHiveMetastore;
-import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.cache.CachingHiveMetastore;
 import io.trino.plugin.hive.parquet.TrinoParquetDataSource;
 import io.trino.plugin.iceberg.catalog.IcebergTableOperationsProvider;
@@ -140,7 +140,7 @@ public final class IcebergTestUtils
         Comparable previousMax = null;
         verify(parquetMetadata.getBlocks().size() > 1, "Test must produce at least two row groups");
         for (BlockMetadata blockMetaData : parquetMetadata.getBlocks()) {
-            ColumnChunkMetadata columnMetadata = blockMetaData.getColumns().stream()
+            ColumnChunkMetadata columnMetadata = blockMetaData.columns().stream()
                     .filter(column -> getOnlyElement(column.getPath().iterator()).equalsIgnoreCase(sortColumnName))
                     .collect(onlyElement());
             if (previousMax != null) {

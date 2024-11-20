@@ -62,6 +62,7 @@ public final class TestGroups
     public static final String HIVE_FILE_HEADER = "hive_file_header";
     public static final String AUTHORIZATION = "authorization";
     public static final String AZURE = "azure";
+    public static final String EXASOL = "exasol";
     public static final String CASSANDRA = "cassandra";
     public static final String POSTGRESQL = "postgresql";
     public static final String SQLSERVER = "sqlserver";
@@ -97,12 +98,15 @@ public final class TestGroups
     public static final String DELTA_LAKE_DATABRICKS_104 = "delta-lake-databricks-104";
     public static final String DELTA_LAKE_DATABRICKS_113 = "delta-lake-databricks-113";
     public static final String DELTA_LAKE_DATABRICKS_122 = "delta-lake-databricks-122";
+    public static final String DELTA_LAKE_DATABRICKS_133 = "delta-lake-databricks-133";
+    public static final String DELTA_LAKE_DATABRICKS_143 = "delta-lake-databricks-143";
     public static final String DATABRICKS_UNITY_HTTP_HMS = "databricks-unity-http-hms";
     public static final String DELTA_LAKE_EXCLUDE_91 = "delta-lake-exclude-91";
     public static final String DELTA_LAKE_ALLUXIO_CACHING = "delta-lake-alluxio-caching";
     public static final String HUDI = "hudi";
     public static final String PARQUET = "parquet";
     public static final String IGNITE = "ignite";
+    public static final String FAULT_TOLERANT = "fault-tolerant";
 
     private TestGroups() {}
 

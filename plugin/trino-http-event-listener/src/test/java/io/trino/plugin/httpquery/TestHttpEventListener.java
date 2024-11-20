@@ -76,7 +76,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.TestInstance.Lifecycle.PER_METHOD;
 
 @TestInstance(PER_METHOD)
-class TestHttpEventListener
+final class TestHttpEventListener
 {
     private MockWebServer server;
 
@@ -128,6 +128,7 @@ class TestHttpEventListener
         queryMetadata = new QueryMetadata(
                 "queryId",
                 Optional.empty(),
+                Optional.empty(),
                 "query",
                 Optional.of("updateType"),
                 Optional.of("preparedQuery"),
@@ -154,6 +155,7 @@ class TestHttpEventListener
                 ofSeconds(1),
                 ofSeconds(1),
                 ofSeconds(1),
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),

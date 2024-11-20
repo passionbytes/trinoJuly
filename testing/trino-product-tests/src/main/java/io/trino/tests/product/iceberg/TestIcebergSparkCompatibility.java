@@ -1134,7 +1134,7 @@ public class TestIcebergSparkCompatibility
 
         QueryResult queryResult = onTrino().executeQuery(format("SELECT file_path FROM %s", trinoTableName("\"" + baseTableName + "$files\"")));
         assertThat(queryResult).hasRowsCount(1).hasColumnsCount(1);
-        assertThat(((String) queryResult.getOnlyValue()).contains(dataPath)).isTrue();
+        assertThat(((String) queryResult.getOnlyValue())).contains(dataPath);
 
         // TODO: support path override in Iceberg table creation: https://github.com/trinodb/trino/issues/8861
         assertQueryFailure(() -> onTrino().executeQuery("DROP TABLE " + trinoTableName))
@@ -1163,7 +1163,7 @@ public class TestIcebergSparkCompatibility
 
         QueryResult queryResult = onTrino().executeQuery(format("SELECT file_path FROM %s", trinoTableName("\"" + baseTableName + "$files\"")));
         assertThat(queryResult).hasRowsCount(1).hasColumnsCount(1);
-        assertThat(((String) queryResult.getOnlyValue()).contains(dataPath)).isTrue();
+        assertThat(((String) queryResult.getOnlyValue())).contains(dataPath);
 
         assertQueryFailure(() -> onTrino().executeQuery("DROP TABLE " + trinoTableName))
                 .hasMessageContaining("contains Iceberg path override properties and cannot be dropped from Trino");
@@ -2461,6 +2461,24 @@ public class TestIcebergSparkCompatibility
 
         assertQueryFailure(() -> onTrino().executeQuery("ALTER TABLE " + trinoTableName + " DROP COLUMN parent.nested"))
                 .hasMessageContaining("Cannot drop column which is used by an old partition spec: parent.nested");
+
+        onTrino().executeQuery("DROP TABLE " + trinoTableName);
+    }
+
+    @Test(groups = {ICEBERG, PROFILE_SPECIFIC_TESTS})
+    public void testPartitionColumnNameConflict()
+    {
+        String baseTableName = "test_conflict_partition" + randomNameSuffix();
+        String trinoTableName = trinoTableName(baseTableName);
+        String sparkTableName = sparkTableName(baseTableName);
+
+        onTrino().executeQuery("CREATE TABLE " + trinoTableName + "(ts timestamp, ts_day int) WITH (partitioning = ARRAY['day(ts)'])");
+        onTrino().executeQuery("INSERT INTO " + trinoTableName + " VALUES (TIMESTAMP '2021-07-24 03:43:57.987654', 1)");
+
+        assertThat(onSpark().executeQuery("SELECT * FROM " + sparkTableName))
+                .containsOnly(row(Timestamp.valueOf("2021-07-24 03:43:57.987654"), 1));
+        assertThat(onSpark().executeQuery("SELECT partition['ts_day_2'] FROM " + sparkTableName + ".partitions"))
+                .containsOnly(row(Date.valueOf("2021-07-24")));
 
         onTrino().executeQuery("DROP TABLE " + trinoTableName);
     }

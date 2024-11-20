@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS;
 
 @TestInstance(PER_CLASS)
-class TestHttpServerEventListener
+final class TestHttpServerEventListener
 {
     private final HttpServerEventListenerFactory factory = new HttpServerEventListenerFactory();
     HttpClient httpClient = new JettyHttpClient();
@@ -94,6 +94,7 @@ class TestHttpServerEventListener
         QueryMetadata queryMetadata = new QueryMetadata(
                 "queryId",
                 Optional.empty(),
+                Optional.empty(),
                 "query",
                 Optional.of("updateType"),
                 Optional.of("preparedQuery"),
@@ -107,6 +108,7 @@ class TestHttpServerEventListener
 
         QueryMetadata queryMetadata2 = new QueryMetadata(
                 "queryId2",
+                Optional.empty(),
                 Optional.empty(),
                 "query",
                 Optional.of("updateType"),
@@ -124,6 +126,7 @@ class TestHttpServerEventListener
                 ofSeconds(1),
                 ofSeconds(1),
                 ofSeconds(1),
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -191,7 +194,7 @@ class TestHttpServerEventListener
     }
 
     @AfterAll
-    public void cleanUp()
+    void cleanUp()
     {
         if (httpClient != null) {
             httpClient.close();

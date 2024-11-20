@@ -112,6 +112,7 @@ public final class SystemSessionProperties
     public static final String ENABLE_INTERMEDIATE_AGGREGATIONS = "enable_intermediate_aggregations";
     public static final String PUSH_AGGREGATION_THROUGH_OUTER_JOIN = "push_aggregation_through_outer_join";
     public static final String PUSH_PARTIAL_AGGREGATION_THROUGH_JOIN = "push_partial_aggregation_through_join";
+    public static final String ALLOW_UNSAFE_PUSHDOWN = "allow_unsafe_pushdown";
     public static final String PRE_AGGREGATE_CASE_AGGREGATIONS_ENABLED = "pre_aggregate_case_aggregations_enabled";
     public static final String FORCE_SINGLE_NODE_OUTPUT = "force_single_node_output";
     public static final String FILTER_AND_PROJECT_MIN_OUTPUT_PAGE_SIZE = "filter_and_project_min_output_page_size";
@@ -140,6 +141,8 @@ public final class SystemSessionProperties
     public static final String PREDICATE_PUSHDOWN_USE_TABLE_PROPERTIES = "predicate_pushdown_use_table_properties";
     public static final String ENABLE_DYNAMIC_FILTERING = "enable_dynamic_filtering";
     public static final String ENABLE_LARGE_DYNAMIC_FILTERS = "enable_large_dynamic_filters";
+    public static final String ENABLE_DYNAMIC_ROW_FILTERING = "enable_dynamic_row_filtering";
+    public static final String DYNAMIC_ROW_FILTERING_SELECTIVITY_THRESHOLD = "dynamic_row_filtering_selectivity_threshold";
     public static final String QUERY_MAX_MEMORY_PER_NODE = "query_max_memory_per_node";
     public static final String IGNORE_DOWNSTREAM_PREFERENCES = "ignore_downstream_preferences";
     public static final String FILTERING_SEMI_JOIN_TO_INNER = "rewrite_filtering_semi_join_to_inner_join";
@@ -196,6 +199,9 @@ public final class SystemSessionProperties
     private static final String FAULT_TOLERANT_EXECUTION_SMALL_STAGE_REQUIRE_NO_MORE_PARTITIONS = "fault_tolerant_execution_small_stage_require_no_more_partitions";
     private static final String FAULT_TOLERANT_EXECUTION_STAGE_ESTIMATION_FOR_EAGER_PARENT_ENABLED = "fault_tolerant_execution_stage_estimation_for_eager_parent_enabled";
     public static final String FAULT_TOLERANT_EXECUTION_ADAPTIVE_QUERY_PLANNING_ENABLED = "fault_tolerant_execution_adaptive_query_planning_enabled";
+    public static final String FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_ENABLED = "fault_tolerant_execution_adaptive_join_reordering_enabled";
+    public static final String FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_SIZE_DIFFERENCE_RATIO = "fault_tolerant_execution_adaptive_join_reordering_size_difference_ratio";
+    public static final String FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_MIN_SIZE_THRESHOLD = "fault_tolerant_execution_adaptive_join_reordering_min_size_threshold";
     public static final String ADAPTIVE_PARTIAL_AGGREGATION_ENABLED = "adaptive_partial_aggregation_enabled";
     public static final String ADAPTIVE_PARTIAL_AGGREGATION_UNIQUE_ROWS_RATIO_THRESHOLD = "adaptive_partial_aggregation_unique_rows_ratio_threshold";
     public static final String REMOTE_TASK_ADAPTIVE_UPDATE_REQUEST_SIZE_ENABLED = "remote_task_adaptive_update_request_size_enabled";
@@ -681,6 +687,21 @@ public final class SystemSessionProperties
                         "Enable collection of large dynamic filters",
                         dynamicFilterConfig.isEnableLargeDynamicFilters(),
                         false),
+                booleanProperty(
+                        ENABLE_DYNAMIC_ROW_FILTERING,
+                        "Enable fine-grained filtering of rows in the scan operator using dynamic filters",
+                        dynamicFilterConfig.isEnableDynamicRowFiltering(),
+                        false),
+                doubleProperty(
+                        DYNAMIC_ROW_FILTERING_SELECTIVITY_THRESHOLD,
+                        "Avoid using dynamic row filters when fraction of rows selected is above threshold",
+                        dynamicFilterConfig.getDynamicRowFilterSelectivityThreshold(),
+                        value -> {
+                            if (value < 0 || value > 1) {
+                                throw new TrinoException(INVALID_SESSION_PROPERTY, format("%s must be in the range [0, 1]: %s", DYNAMIC_ROW_FILTERING_SELECTIVITY_THRESHOLD, value));
+                            }
+                        },
+                        false),
                 dataSizeProperty(
                         QUERY_MAX_MEMORY_PER_NODE,
                         "Maximum amount of memory a query can use per node",
@@ -998,6 +1019,28 @@ public final class SystemSessionProperties
                         queryManagerConfig.isFaultTolerantExecutionAdaptiveQueryPlanningEnabled(),
                         false),
                 booleanProperty(
+                        FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_ENABLED,
+                        "Reorder partitioned join based on run time stats in fault tolerant execution",
+                        queryManagerConfig.isFaultTolerantExecutionAdaptiveJoinReorderingEnabled(),
+                        false),
+                doubleProperty(
+                        FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_SIZE_DIFFERENCE_RATIO,
+                        "The ratio of difference in estimated size of right and left side of join to consider reordering",
+                        queryManagerConfig.getFaultTolerantExecutionAdaptiveJoinReorderingSizeDifferenceRatio(),
+                        value -> {
+                            if (value < 1.0) {
+                                throw new TrinoException(
+                                        INVALID_SESSION_PROPERTY,
+                                        format("%s must be greater than or equal to 1.0: %s", FAULT_TOLERANT_EXECUTION_SMALL_STAGE_SOURCE_SIZE_MULTIPLIER, value));
+                            }
+                        },
+                        true),
+                dataSizeProperty(
+                        FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_MIN_SIZE_THRESHOLD,
+                        "The minimum size of the right side of join to consider reordering",
+                        queryManagerConfig.getFaultTolerantExecutionAdaptiveJoinReorderingMinSizeThreshold(),
+                        true),
+                booleanProperty(
                         ADAPTIVE_PARTIAL_AGGREGATION_ENABLED,
                         "When enabled, partial aggregation might be adaptively turned off when it does not provide any performance gain",
                         optimizerConfig.isAdaptivePartialAggregationEnabled(),
@@ -1080,6 +1123,11 @@ public final class SystemSessionProperties
                 durationProperty(CLOSE_IDLE_WRITERS_TRIGGER_DURATION,
                         "The duration after which the writer operator tries to close the idle writers",
                         new Duration(5, SECONDS),
+                        true),
+                booleanProperty(
+                        ALLOW_UNSAFE_PUSHDOWN,
+                        "Allow pushing down expressions that may fail for some inputs",
+                        optimizerConfig.isUnsafePushdownAllowed(),
                         true));
     }
 
@@ -1580,6 +1628,16 @@ public final class SystemSessionProperties
         return session.getSystemProperty(ENABLE_LARGE_DYNAMIC_FILTERS, Boolean.class);
     }
 
+    public static boolean isEnableDynamicRowFiltering(Session session)
+    {
+        return session.getSystemProperty(ENABLE_DYNAMIC_ROW_FILTERING, Boolean.class);
+    }
+
+    public static double getDynamicRowFilterSelectivityThreshold(Session session)
+    {
+        return session.getSystemProperty(DYNAMIC_ROW_FILTERING_SELECTIVITY_THRESHOLD, Double.class);
+    }
+
     public static DataSize getQueryMaxMemoryPerNode(Session session)
     {
         return session.getSystemProperty(QUERY_MAX_MEMORY_PER_NODE, DataSize.class);
@@ -1860,6 +1918,21 @@ public final class SystemSessionProperties
         return session.getSystemProperty(FAULT_TOLERANT_EXECUTION_ADAPTIVE_QUERY_PLANNING_ENABLED, Boolean.class);
     }
 
+    public static boolean isFaultTolerantExecutionAdaptiveJoinReorderingEnabled(Session session)
+    {
+        return session.getSystemProperty(FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_ENABLED, Boolean.class);
+    }
+
+    public static double getFaultTolerantExecutionAdaptiveJoinReorderingSizeDifferenceRatio(Session session)
+    {
+        return session.getSystemProperty(FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_SIZE_DIFFERENCE_RATIO, Double.class);
+    }
+
+    public static DataSize getFaultTolerantExecutionAdaptiveJoinReorderingMinSizeThreshold(Session session)
+    {
+        return session.getSystemProperty(FAULT_TOLERANT_EXECUTION_ADAPTIVE_JOIN_REORDERING_MIN_SIZE_THRESHOLD, DataSize.class);
+    }
+
     public static boolean isAdaptivePartialAggregationEnabled(Session session)
     {
         return session.getSystemProperty(ADAPTIVE_PARTIAL_AGGREGATION_ENABLED, Boolean.class);
@@ -1943,5 +2016,10 @@ public final class SystemSessionProperties
     public static boolean isColumnarFilterEvaluationEnabled(Session session)
     {
         return session.getSystemProperty(COLUMNAR_FILTER_EVALUATION_ENABLED, Boolean.class);
+    }
+
+    public static boolean isUnsafePushdownAllowed(Session session)
+    {
+        return session.getSystemProperty(ALLOW_UNSAFE_PUSHDOWN, Boolean.class);
     }
 }

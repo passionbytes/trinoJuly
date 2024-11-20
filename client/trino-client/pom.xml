@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.trino</groupId>
         <artifactId>trino-root</artifactId>
-        <version>452-SNAPSHOT</version>
+        <version>460-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -50,6 +50,11 @@
 
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>logging-interceptor</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
         </dependency>
 
@@ -61,6 +66,11 @@
         <dependency>
             <groupId>dev.failsafe</groupId>
             <artifactId>failsafe</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>aircompressor</artifactId>
         </dependency>
 
         <dependency>

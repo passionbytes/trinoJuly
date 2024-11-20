@@ -78,6 +78,7 @@ import static io.trino.spi.block.Fixed12Block.encodeFixed12;
 import static io.trino.spi.type.DateTimeEncoding.packDateTimeWithZone;
 import static io.trino.spi.type.Decimals.longTenToNth;
 import static io.trino.spi.type.Decimals.overflows;
+import static io.trino.spi.type.Decimals.rescale;
 import static io.trino.spi.type.TimeZoneKey.UTC_KEY;
 import static io.trino.spi.type.Timestamps.MICROSECONDS_PER_MILLISECOND;
 import static io.trino.spi.type.Timestamps.MICROSECONDS_PER_SECOND;
@@ -415,17 +416,16 @@ public final class ValueDecoders
                 (values, offset, length) -> {
                     for (int i = offset; i < offset + length; i++) {
                         long epochSeconds = decodeFixed12First(values, i);
-                        long nanosOfSecond = decodeFixed12Second(values, i);
+                        int nanosOfSecond = decodeFixed12Second(values, i);
                         if (timeZone != DateTimeZone.UTC) {
                             epochSeconds = timeZone.convertUTCToLocal(epochSeconds * MILLISECONDS_PER_SECOND) / MILLISECONDS_PER_SECOND;
                         }
                         if (precision < 9) {
                             nanosOfSecond = (int) round(nanosOfSecond, 9 - precision);
                         }
-                        // epochMicros
                         encodeFixed12(
-                                epochSeconds * MICROSECONDS_PER_SECOND + (nanosOfSecond / NANOSECONDS_PER_MICROSECOND),
-                                (int) ((nanosOfSecond * PICOSECONDS_PER_NANOSECOND) % PICOSECONDS_PER_MICROSECOND),
+                                epochSeconds * MICROSECONDS_PER_SECOND + (nanosOfSecond / NANOSECONDS_PER_MICROSECOND), // epochMicros
+                                (nanosOfSecond % NANOSECONDS_PER_MICROSECOND) * PICOSECONDS_PER_NANOSECOND, // picosOfMicro
                                 values,
                                 i);
                     }
@@ -468,7 +468,33 @@ public final class ValueDecoders
         };
     }
 
-    public ValueDecoder<long[]> getInt64TimestampMillsToShortTimestampDecoder(ParquetEncoding encoding)
+    public ValueDecoder<int[]> getInt96ToLongTimestampWithTimeZoneDecoder(ParquetEncoding encoding)
+    {
+        checkArgument(
+                field.getType() instanceof TimestampWithTimeZoneType timestampType && !timestampType.isShort(),
+                "Trino type %s is not a long timestamp",
+                field.getType());
+        int precision = ((TimestampWithTimeZoneType) field.getType()).getPrecision();
+        return new InlineTransformDecoder<>(
+                getInt96TimestampDecoder(encoding),
+                (values, offset, length) -> {
+                    for (int i = offset; i < offset + length; i++) {
+                        long epochSeconds = decodeFixed12First(values, i);
+                        int nanosOfSecond = decodeFixed12Second(values, i);
+                        if (precision < 9) {
+                            nanosOfSecond = (int) round(nanosOfSecond, 9 - precision);
+                        }
+                        long utcMillis = epochSeconds * MILLISECONDS_PER_SECOND + (nanosOfSecond / NANOSECONDS_PER_MILLISECOND);
+                        encodeFixed12(
+                                packDateTimeWithZone(utcMillis, UTC_KEY),
+                                (nanosOfSecond % NANOSECONDS_PER_MILLISECOND) * PICOSECONDS_PER_NANOSECOND,
+                                values,
+                                i);
+                    }
+                });
+    }
+
+    public ValueDecoder<long[]> getInt64TimestampMillisToShortTimestampDecoder(ParquetEncoding encoding, DateTimeZone timeZone)
     {
         checkArgument(
                 field.getType() instanceof TimestampType timestampType && timestampType.isShort(),
@@ -482,7 +508,13 @@ public final class ValueDecoders
                     (values, offset, length) -> {
                         // decoded values are epochMillis, round to lower precision and convert to epochMicros
                         for (int i = offset; i < offset + length; i++) {
-                            values[i] = round(values[i], 3 - precision) * MICROSECONDS_PER_MILLISECOND;
+                            long epochMillis = round(values[i], 3 - precision);
+                            if (timeZone == DateTimeZone.UTC) {
+                                values[i] = epochMillis * MICROSECONDS_PER_MILLISECOND;
+                            }
+                            else {
+                                values[i] = timeZone.convertUTCToLocal(epochMillis) * MICROSECONDS_PER_MILLISECOND;
+                            }
                         }
                     });
         }
@@ -491,7 +523,12 @@ public final class ValueDecoders
                 (values, offset, length) -> {
                     // decoded values are epochMillis, convert to epochMicros
                     for (int i = offset; i < offset + length; i++) {
-                        values[i] = values[i] * MICROSECONDS_PER_MILLISECOND;
+                        if (timeZone == DateTimeZone.UTC) {
+                            values[i] = values[i] * MICROSECONDS_PER_MILLISECOND;
+                        }
+                        else {
+                            values[i] = timeZone.convertUTCToLocal(values[i]) * MICROSECONDS_PER_MILLISECOND;
+                        }
                     }
                 });
     }
@@ -524,7 +561,7 @@ public final class ValueDecoders
                 });
     }
 
-    public ValueDecoder<long[]> getInt64TimestampMicrosToShortTimestampDecoder(ParquetEncoding encoding)
+    public ValueDecoder<long[]> getInt64TimestampMicrosToShortTimestampDecoder(ParquetEncoding encoding, DateTimeZone timeZone)
     {
         checkArgument(
                 field.getType() instanceof TimestampType timestampType && timestampType.isShort(),
@@ -533,14 +570,32 @@ public final class ValueDecoders
         int precision = ((TimestampType) field.getType()).getPrecision();
         ValueDecoder<long[]> valueDecoder = getLongDecoder(encoding);
         if (precision == 6) {
-            return valueDecoder;
+            if (timeZone == DateTimeZone.UTC) {
+                return valueDecoder;
+            }
+            new InlineTransformDecoder<>(
+                    valueDecoder,
+                    (values, offset, length) -> {
+                        for (int i = offset; i < offset + length; i++) {
+                            long epochMicros = values[i];
+                            long localMillis = timeZone.convertUTCToLocal(floorDiv(epochMicros, MICROSECONDS_PER_MILLISECOND));
+                            values[i] = (localMillis * MICROSECONDS_PER_MILLISECOND) + floorMod(epochMicros, MICROSECONDS_PER_MILLISECOND);
+                        }
+                    });
         }
         return new InlineTransformDecoder<>(
                 valueDecoder,
                 (values, offset, length) -> {
                     // decoded values are epochMicros, round to lower precision
                     for (int i = offset; i < offset + length; i++) {
-                        values[i] = round(values[i], 6 - precision);
+                        long epochMicros = round(values[i], 6 - precision);
+                        if (timeZone == DateTimeZone.UTC) {
+                            values[i] = epochMicros;
+                        }
+                        else {
+                            long localMillis = timeZone.convertUTCToLocal(floorDiv(epochMicros, MICROSECONDS_PER_MILLISECOND));
+                            values[i] = (localMillis * MICROSECONDS_PER_MILLISECOND) + floorMod(epochMicros, MICROSECONDS_PER_MILLISECOND);
+                        }
                     }
                 });
     }
@@ -562,7 +617,7 @@ public final class ValueDecoders
                 });
     }
 
-    public ValueDecoder<long[]> getInt64TimestampNanosToShortTimestampDecoder(ParquetEncoding encoding)
+    public ValueDecoder<long[]> getInt64TimestampNanosToShortTimestampDecoder(ParquetEncoding encoding, DateTimeZone timeZone)
     {
         checkArgument(
                 field.getType() instanceof TimestampType timestampType && timestampType.isShort(),
@@ -574,12 +629,19 @@ public final class ValueDecoders
                 (values, offset, length) -> {
                     // decoded values are epochNanos, round to lower precision and convert to epochMicros
                     for (int i = offset; i < offset + length; i++) {
-                        values[i] = round(values[i], 9 - precision) / NANOSECONDS_PER_MICROSECOND;
+                        long epochNanos = round(values[i], 9 - precision);
+                        if (timeZone == DateTimeZone.UTC) {
+                            values[i] = epochNanos / NANOSECONDS_PER_MICROSECOND;
+                        }
+                        else {
+                            long localMillis = timeZone.convertUTCToLocal(floorDiv(epochNanos, NANOSECONDS_PER_MILLISECOND));
+                            values[i] = (localMillis * MICROSECONDS_PER_MILLISECOND) + floorDiv(floorMod(epochNanos, NANOSECONDS_PER_MILLISECOND), NANOSECONDS_PER_MICROSECOND);
+                        }
                     }
                 });
     }
 
-    public ValueDecoder<int[]> getInt64TimestampMillisToLongTimestampDecoder(ParquetEncoding encoding)
+    public ValueDecoder<int[]> getInt64TimestampMillisToLongTimestampDecoder(ParquetEncoding encoding, DateTimeZone timeZone)
     {
         ValueDecoder<long[]> delegate = getLongDecoder(encoding);
         return new ValueDecoder<>()
@@ -597,7 +659,12 @@ public final class ValueDecoders
                 delegate.read(buffer, 0, length);
                 // decoded values are epochMillis, convert to epochMicros
                 for (int i = 0; i < length; i++) {
-                    encodeFixed12(buffer[i] * MICROSECONDS_PER_MILLISECOND, 0, values, i + offset);
+                    if (timeZone == DateTimeZone.UTC) {
+                        encodeFixed12(buffer[i] * MICROSECONDS_PER_MILLISECOND, 0, values, i + offset);
+                    }
+                    else {
+                        encodeFixed12(timeZone.convertUTCToLocal(buffer[i]) * MICROSECONDS_PER_MILLISECOND, 0, values, i + offset);
+                    }
                 }
             }
 
@@ -609,7 +676,7 @@ public final class ValueDecoders
         };
     }
 
-    public ValueDecoder<int[]> getInt64TimestampMicrosToLongTimestampDecoder(ParquetEncoding encoding)
+    public ValueDecoder<int[]> getInt64TimestampMicrosToLongTimestampDecoder(ParquetEncoding encoding, DateTimeZone timeZone)
     {
         ValueDecoder<long[]> delegate = getLongDecoder(encoding);
         return new ValueDecoder<>()
@@ -627,7 +694,17 @@ public final class ValueDecoders
                 delegate.read(buffer, 0, length);
                 // decoded values are epochMicros
                 for (int i = 0; i < length; i++) {
-                    encodeFixed12(buffer[i], 0, values, i + offset);
+                    long epochMicros = buffer[i];
+                    if (timeZone == DateTimeZone.UTC) {
+                        encodeFixed12(epochMicros, 0, values, i + offset);
+                    }
+                    else {
+                        long localMillis = timeZone.convertUTCToLocal(floorDiv(epochMicros, MICROSECONDS_PER_MILLISECOND));
+                        encodeFixed12((localMillis * MICROSECONDS_PER_MILLISECOND) + floorMod(epochMicros, MICROSECONDS_PER_MILLISECOND),
+                                0,
+                                values,
+                                i + offset);
+                    }
                 }
             }
 
@@ -674,7 +751,7 @@ public final class ValueDecoders
         };
     }
 
-    public ValueDecoder<int[]> getInt64TimestampNanosToLongTimestampDecoder(ParquetEncoding encoding)
+    public ValueDecoder<int[]> getInt64TimestampNanosToLongTimestampDecoder(ParquetEncoding encoding, DateTimeZone timeZone)
     {
         ValueDecoder<long[]> delegate = getLongDecoder(encoding);
         return new ValueDecoder<>()
@@ -690,14 +767,26 @@ public final class ValueDecoders
             {
                 long[] buffer = new long[length];
                 delegate.read(buffer, 0, length);
-                // decoded values are epochNanos, convert to (epochMicros, picosOfMicro)
+                // decoded values are epochNanos, convert to (epochMicros, picosOfNanos)
                 for (int i = 0; i < length; i++) {
                     long epochNanos = buffer[i];
-                    encodeFixed12(
-                            floorDiv(epochNanos, NANOSECONDS_PER_MICROSECOND),
-                            floorMod(epochNanos, NANOSECONDS_PER_MICROSECOND) * PICOSECONDS_PER_NANOSECOND,
-                            values,
-                            i + offset);
+                    int picosOfNanos = floorMod(epochNanos, NANOSECONDS_PER_MICROSECOND) * PICOSECONDS_PER_NANOSECOND;
+                    if (timeZone == DateTimeZone.UTC) {
+                        encodeFixed12(
+                                floorDiv(epochNanos, NANOSECONDS_PER_MICROSECOND),
+                                picosOfNanos,
+                                values,
+                                i + offset);
+                    }
+                    else {
+                        long localMillis = timeZone.convertUTCToLocal(floorDiv(epochNanos, NANOSECONDS_PER_MILLISECOND));
+                        long microsFromNanos = floorMod(epochNanos, NANOSECONDS_PER_MILLISECOND) / NANOSECONDS_PER_MICROSECOND;
+                        encodeFixed12(
+                                (localMillis * MICROSECONDS_PER_MILLISECOND) + microsFromNanos,
+                                picosOfNanos,
+                                values,
+                                i + offset);
+                    }
                 }
             }
 
@@ -981,7 +1070,7 @@ public final class ValueDecoders
                                 INVALID_CAST_ARGUMENT,
                                 format("Cannot read parquet INT32 value '%s' as DECIMAL(%s, %s)", buffer[i], decimalType.getPrecision(), decimalType.getScale()));
                     }
-                    values[i + offset] = buffer[i];
+                    values[i + offset] = rescale(buffer[i], 0, decimalType.getScale());
                 }
             }
 

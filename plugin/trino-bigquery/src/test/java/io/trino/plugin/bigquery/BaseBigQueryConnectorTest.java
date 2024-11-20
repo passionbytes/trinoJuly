@@ -82,7 +82,6 @@ public abstract class BaseBigQueryConnectorTest
             case SUPPORTS_ADD_COLUMN,
                     SUPPORTS_CREATE_MATERIALIZED_VIEW,
                     SUPPORTS_CREATE_VIEW,
-                    SUPPORTS_DEREFERENCE_PUSHDOWN,
                     SUPPORTS_MERGE,
                     SUPPORTS_NEGATIVE_DATE,
                     SUPPORTS_NOT_NULL_CONSTRAINT,
@@ -95,6 +94,11 @@ public abstract class BaseBigQueryConnectorTest
             default -> super.hasBehavior(connectorBehavior);
         };
     }
+
+    @Test
+    @Disabled // Disable this test because this test is slow and BigQuery connector doesn't support sample pushdown
+    @Override
+    public void testTableSampleBernoulli() {}
 
     @Override
     @Test
@@ -815,7 +819,7 @@ public abstract class BaseBigQueryConnectorTest
 
             // Verify query cache is empty
             assertThat(query(createNeverDisposition, "SELECT * FROM test." + materializedView))
-                    .failure().hasMessageMatching("Failed to run the query: Not found: Table .* was not found .*");
+                    .failure().hasMessageMatching("Failed to run the query: Not found: Table .*");
             // Populate cache and verify it
             assertQuery(queryResultsCacheSession, "SELECT * FROM test." + materializedView, "VALUES 5");
             assertQuery(createNeverDisposition, "SELECT * FROM test." + materializedView, "VALUES 5");
@@ -983,6 +987,16 @@ public abstract class BaseBigQueryConnectorTest
     }
 
     @Test
+    public void testNativeQueryWithCount()
+    {
+        assertThat(query("SELECT COUNT(*) FROM TABLE(bigquery.system.query(query => 'SELECT 1'))"))
+                .matches("VALUES BIGINT '1'");
+
+        assertThat(query("SELECT COUNT(*) FROM TABLE(bigquery.system.query(query => 'SELECT * FROM tpch.nation'))"))
+                .matches("VALUES BIGINT '25'");
+    }
+
+    @Test
     public void testNativeQueryColumnAliasNotFound()
     {
         assertQueryFails(
@@ -1042,7 +1056,7 @@ public abstract class BaseBigQueryConnectorTest
         assertThat(getQueryRunner().tableExists(getSession(), tableName)).isFalse();
         assertThat(query("SELECT * FROM TABLE(bigquery.system.query(query => 'INSERT INTO test." + tableName + " VALUES (1)'))"))
                 .failure()
-                .hasMessageContaining("Failed to get schema for query")
+                .hasMessageContaining("Failed to get destination table for query")
                 .hasStackTraceContaining("%s was not found", tableName);
     }
 
@@ -1064,7 +1078,58 @@ public abstract class BaseBigQueryConnectorTest
     public void testNativeQueryIncorrectSyntax()
     {
         assertThat(query("SELECT * FROM TABLE(system.query(query => 'some wrong syntax'))"))
-                .failure().hasMessageContaining("Failed to get schema for query");
+                .failure().hasMessageContaining("Failed to get destination table for query");
+    }
+
+    @Test
+    public void testExecuteProcedure()
+    {
+        String tableName = "test_execute" + randomNameSuffix();
+        String schemaTableName = getSession().getSchema().orElseThrow() + "." + tableName;
+
+        assertUpdate("CREATE TABLE " + schemaTableName + "(a int)");
+        try {
+            assertUpdate("CALL system.execute('INSERT INTO " + schemaTableName + " VALUES (1)')");
+            assertQuery("SELECT * FROM " + schemaTableName, "VALUES 1");
+
+            assertUpdate("CALL system.execute('UPDATE " + schemaTableName + " SET a = 2 WHERE true')");
+            assertQuery("SELECT * FROM " + schemaTableName, "VALUES 2");
+
+            assertUpdate("CALL system.execute('DELETE FROM " + schemaTableName + " WHERE true')");
+            assertQueryReturnsEmptyResult("SELECT * FROM " + schemaTableName);
+
+            assertUpdate("CALL system.execute('DROP TABLE " + schemaTableName + "')");
+            assertThat(getQueryRunner().tableExists(getSession(), tableName)).isFalse();
+        }
+        finally {
+            assertUpdate("DROP TABLE IF EXISTS " + schemaTableName);
+        }
+    }
+
+    @Test
+    public void testExecuteProcedureWithNamedArgument()
+    {
+        String tableName = "test_execute" + randomNameSuffix();
+        String schemaTableName = getSession().getSchema().orElseThrow() + "." + tableName;
+
+        assertUpdate("CREATE TABLE " + schemaTableName + "(a int)");
+        try {
+            assertThat(getQueryRunner().tableExists(getSession(), tableName)).isTrue();
+            assertUpdate("CALL system.execute(query => 'DROP TABLE " + schemaTableName + "')");
+            assertThat(getQueryRunner().tableExists(getSession(), tableName)).isFalse();
+        }
+        finally {
+            assertUpdate("DROP TABLE IF EXISTS " + schemaTableName);
+        }
+    }
+
+    @Test
+    public void testExecuteProcedureWithInvalidQuery()
+    {
+        // BigQuery.query method allows SELECT statements
+        assertQuerySucceeds("CALL system.execute('SELECT 1')");
+
+        assertQueryFails("CALL system.execute('invalid')", ".*Syntax error: Unexpected identifier.*");
     }
 
     @Test

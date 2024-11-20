@@ -87,6 +87,7 @@ import static io.airlift.units.Duration.nanosSince;
 import static io.trino.SystemSessionProperties.IGNORE_STATS_CALCULATOR_FAILURES;
 import static io.trino.connector.informationschema.InformationSchemaTable.INFORMATION_SCHEMA;
 import static io.trino.server.testing.TestingSystemSessionProperties.TESTING_SESSION_TIME;
+import static io.trino.spi.StandardErrorCode.FUNCTION_NOT_FOUND;
 import static io.trino.spi.connector.ConnectorMetadata.MODIFYING_ROWS_MESSAGE;
 import static io.trino.spi.connector.MaterializedViewFreshness.Freshness.FRESH;
 import static io.trino.spi.connector.MaterializedViewFreshness.Freshness.STALE;
@@ -537,7 +538,7 @@ public abstract class BaseConnectorTest
         assertQuery("" +
                 "SELECT orderkey, custkey, orderstatus, totalprice, orderdate, orderpriority, clerk, shippriority, comment " +
                 "FROM orders " +
-                "WHERE orderkey BETWEEN 10 AND 50");
+                "WHERE orderkey BETWEEN 10 AND 50 OR orderkey BETWEEN 100 AND 150");
     }
 
     @Test
@@ -2204,7 +2205,9 @@ public abstract class BaseConnectorTest
         try {
             assertUpdate(createSchemaSql(schemaName));
             assertUpdate("ALTER SCHEMA " + schemaName + " RENAME TO " + schemaName + "_renamed");
-            assertThat(computeActual("SHOW SCHEMAS").getOnlyColumnAsSet()).contains(schemaName + "_renamed");
+            assertThat(computeActual("SHOW SCHEMAS").getOnlyColumnAsSet())
+                    .doesNotContain(schemaName)
+                    .contains(schemaName + "_renamed");
         }
         finally {
             assertUpdate("DROP SCHEMA IF EXISTS " + schemaName);
@@ -2278,6 +2281,9 @@ public abstract class BaseConnectorTest
             // Verify table state after adding a column, but before inserting anything to it
             assertQuery(
                     "SELECT * FROM " + table.getName(),
+                    "VALUES ('first', NULL)");
+            assertQuery(
+                    "SELECT * FROM " + table.getName() + " WHERE a IS NULL",
                     "VALUES ('first', NULL)");
             assertUpdate("INSERT INTO " + table.getName() + " SELECT 'second', 'xxx'", 1);
             assertQuery(
@@ -2947,9 +2953,14 @@ public abstract class BaseConnectorTest
     {
         return ImmutableList.<SetColumnTypeSetup>builder()
                 .add(new SetColumnTypeSetup("tinyint", "TINYINT '127'", "smallint"))
+                .add(new SetColumnTypeSetup("tinyint", "TINYINT '126'", "integer"))
+                .add(new SetColumnTypeSetup("tinyint", "TINYINT '125'", "bigint"))
                 .add(new SetColumnTypeSetup("smallint", "SMALLINT '32767'", "integer"))
+                .add(new SetColumnTypeSetup("smallint", "SMALLINT '32766'", "bigint"))
                 .add(new SetColumnTypeSetup("integer", "2147483647", "bigint"))
                 .add(new SetColumnTypeSetup("bigint", "BIGINT '-2147483648'", "integer"))
+                .add(new SetColumnTypeSetup("bigint", "BIGINT '-32768'", "smallint"))
+                .add(new SetColumnTypeSetup("bigint", "BIGINT '-128'", "tinyint"))
                 .add(new SetColumnTypeSetup("real", "REAL '10.3'", "double"))
                 .add(new SetColumnTypeSetup("real", "REAL 'NaN'", "double"))
                 .add(new SetColumnTypeSetup("decimal(5,3)", "12.345", "decimal(10,3)")) // short decimal -> short decimal
@@ -2999,6 +3010,12 @@ public abstract class BaseConnectorTest
             requireNonNull(sourceValueLiteral, "sourceValueLiteral is null");
             requireNonNull(newColumnType, "newColumnType is null");
             requireNonNull(newValueLiteral, "newValueLiteral is null");
+        }
+
+        public SetColumnTypeSetup withNewColumnType(String newColumnType)
+        {
+            checkState(!unsupportedType);
+            return new SetColumnTypeSetup(sourceColumnType, sourceValueLiteral, newColumnType);
         }
 
         public SetColumnTypeSetup withNewValueLiteral(String newValueLiteral)
@@ -4863,6 +4880,17 @@ public abstract class BaseConnectorTest
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_row_update", "AS SELECT * FROM nation")) {
             assertUpdate("UPDATE " + table.getName() + " SET nationkey = 100 WHERE regionkey = 2", 5);
             assertQuery("SELECT count(*) FROM " + table.getName() + " WHERE nationkey = 100", "VALUES 5");
+        }
+    }
+
+    @Test
+    public void testUpdateMultipleCondition()
+    {
+        skipTestUnless(hasBehavior(SUPPORTS_UPDATE));
+
+        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_row_update", "AS SELECT * FROM (VALUES (1, 10), (1, 20), (2, 10)) AS t(a, b)")) {
+            assertUpdate("UPDATE " + table.getName() + " SET b = 100 WHERE a = 1 AND b = 10", 1);
+            assertQuery("SELECT * FROM " + table.getName(), "VALUES (1, 100), (1, 20), (2, 10)");
         }
     }
 
@@ -6825,6 +6853,25 @@ public abstract class BaseConnectorTest
         assertQueryFails("SELECT " + recursive2 + "(42)", "Recursive language functions are not supported: " + recursive2 + "\\(integer\\):integer");
         assertUpdate("DROP FUNCTION " + recursive1 + "(integer)");
         assertUpdate("DROP FUNCTION " + recursive2 + "(integer)");
+
+        // verify exception code when function references another, not existing function
+        String wrappingFunction = "wrapping_" + randomNameSuffix();
+        String wrappedFunction = "wrapped_" + randomNameSuffix();
+
+        // wrapped_() not yet registered
+        assertThat(query("CREATE FUNCTION " + wrappingFunction + "() RETURNS integer RETURN " + wrappedFunction + "()")).failure()
+                .hasMessage("line 1:62: Function '" + wrappedFunction + "' not registered")
+                .hasErrorCode(FUNCTION_NOT_FOUND);
+
+        assertUpdate("CREATE FUNCTION " + wrappedFunction + "() RETURNS integer RETURN 42");
+        assertUpdate("CREATE FUNCTION " + wrappingFunction + "() RETURNS integer RETURN " + wrappedFunction + "()");
+        assertQuery("SELECT " + wrappingFunction + "()", "SELECT 42");
+        assertUpdate("DROP FUNCTION " + wrappedFunction + "()");
+
+        // wrapped_() dropped
+        assertThat(query("SELECT " + wrappingFunction + "()")).failure()
+                .hasMessage("line 1:8: Function '" + wrappedFunction + "' not registered")
+                .hasErrorCode(FUNCTION_NOT_FOUND);
     }
 
     @Test
