@@ -28,6 +28,7 @@
             <artifactId>guice</artifactId>
         </dependency>
 
+        <!-- https://mvnrepository.com/artifact/com.lancedb/lance-core -->
         <dependency>
             <groupId>com.lancedb</groupId>
             <artifactId>lance-core</artifactId>

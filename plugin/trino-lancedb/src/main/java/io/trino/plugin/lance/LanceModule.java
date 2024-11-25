@@ -28,6 +28,7 @@ public class LanceModule
     {
         configBinder(binder).bindConfig(LanceConfig.class);
         binder.bind(LanceReader.class).in(Scopes.SINGLETON);
+        binder.bind(LanceConnector.class).in(Scopes.SINGLETON);
         binder.bind(LanceMetadata.class).in(Scopes.SINGLETON);
         binder.bind(LanceSplitManager.class).in(Scopes.SINGLETON);
         binder.bind(LancePageSourceProvider.class).in(Scopes.SINGLETON);
